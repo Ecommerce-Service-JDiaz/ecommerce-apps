@@ -54,8 +54,26 @@ deploy_sonarqube() {
     envsubst < k8s/sonarqube/pvc.yaml | kubectl apply -f -
     envsubst < k8s/sonarqube/postgres-deployment.yaml | kubectl apply -f -
     
+    # Esperar a que los PVCs estén bound
+    echo "Esperando a que los PVCs estén aprovisionados..."
+    kubectl wait --for=condition=bound pvc/sonarqube-data-pvc -n $env --timeout=120s || true
+    kubectl wait --for=condition=bound pvc/sonarqube-extensions-pvc -n $env --timeout=120s || true
+    kubectl wait --for=condition=bound pvc/sonarqube-logs-pvc -n $env --timeout=120s || true
+    kubectl wait --for=condition=bound pvc/sonarqube-db-pvc -n $env --timeout=120s || true
+    
     echo "Esperando a que la base de datos esté lista..."
-    kubectl wait --for=condition=ready pod -l app=sonarqube-db -n $env --timeout=300s
+    kubectl wait --for=condition=ready pod -l app=sonarqube-db -n $env --timeout=600s || {
+      echo "ERROR: El pod de la base de datos no está listo. Diagnóstico:"
+      kubectl get pods -l app=sonarqube-db -n $env
+      kubectl get pvc -n $env
+      kubectl describe pod -l app=sonarqube-db -n $env
+      POD_NAME=$(kubectl get pods -l app=sonarqube-db -n $env -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+      if [ -n "$POD_NAME" ]; then
+        echo "Logs del pod $POD_NAME:"
+        kubectl logs $POD_NAME -n $env --tail=50
+      fi
+      exit 1
+    }
     
     envsubst < k8s/sonarqube/deployment.yaml | kubectl apply -f -
     envsubst < k8s/sonarqube/service.yaml | kubectl apply -f -
