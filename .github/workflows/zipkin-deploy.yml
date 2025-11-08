@@ -73,11 +73,27 @@ jobs:
               --overwrite-existing
             
             # Crear namespace si no existe
+            echo "Verificando/creando namespace $env..."
             kubectl create namespace $env --dry-run=client -o yaml | kubectl apply -f -
             
-            # Aplicar manifests con substitución de variables
+            # Verificar si el deployment ya existe
+            if kubectl get deployment zipkin -n $env &>/dev/null; then
+              echo "Deployment zipkin ya existe en $env, actualizando..."
+            else
+              echo "Creando nuevo deployment zipkin en $env..."
+            fi
+            
+            # Aplicar manifests con substitución de variables (idempotente)
             export NAMESPACE=$env
             envsubst < k8s/zipkin/deployment.yaml | kubectl apply -f -
+            
+            # Verificar si el servicio ya existe
+            if kubectl get service zipkin -n $env &>/dev/null; then
+              echo "Service zipkin ya existe en $env, actualizando..."
+            else
+              echo "Creando nuevo service zipkin en $env..."
+            fi
+            
             envsubst < k8s/zipkin/service.yaml | kubectl apply -f -
             
             echo "Zipkin desplegado exitosamente en $env"
@@ -112,8 +128,49 @@ jobs:
               --name "$CLUSTER_NAME" \
               --overwrite-existing
             
+            echo "=== Estado del Deployment ==="
             kubectl get deployment zipkin -n $env
+            
+            echo "=== Estado del Service ==="
             kubectl get service zipkin -n $env
+            
+            echo "=== Esperando rollout del deployment ==="
             kubectl rollout status deployment/zipkin -n $env --timeout=300s
+            
+            echo "=== Esperando IP externa del LoadBalancer ==="
+            EXTERNAL_IP=""
+            MAX_ATTEMPTS=30
+            ATTEMPT=0
+            
+            while [ -z "$EXTERNAL_IP" ] && [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+              EXTERNAL_IP=$(kubectl get service zipkin -n $env -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+              if [ -z "$EXTERNAL_IP" ]; then
+                EXTERNAL_IP=$(kubectl get service zipkin -n $env -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
+              fi
+              
+              if [ -z "$EXTERNAL_IP" ]; then
+                ATTEMPT=$((ATTEMPT + 1))
+                echo "Esperando IP externa... (intento $ATTEMPT/$MAX_ATTEMPTS)"
+                sleep 10
+              fi
+            done
+            
+            if [ -n "$EXTERNAL_IP" ]; then
+              echo "✅ Zipkin está disponible en: http://$EXTERNAL_IP:9411"
+              echo "🌐 URL completa: http://$EXTERNAL_IP:9411"
+            else
+              echo "⚠️  La IP externa aún no está disponible. Puede tardar unos minutos."
+              echo "Verifica el estado con: kubectl get service zipkin -n $env"
+            fi
+            
+            echo "=== Verificando salud del servicio ==="
+            if [ -n "$EXTERNAL_IP" ]; then
+              sleep 5
+              if curl -f -s "http://$EXTERNAL_IP:9411/health" > /dev/null; then
+                echo "✅ Zipkin está respondiendo correctamente"
+              else
+                echo "⚠️  Zipkin aún no está respondiendo, puede tardar unos segundos más"
+              fi
+            fi
           done
 

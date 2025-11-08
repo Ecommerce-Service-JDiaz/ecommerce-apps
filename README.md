@@ -128,18 +128,34 @@ Cada ambiente utiliza un namespace diferente en Kubernetes:
 
 ## Acceso a las Aplicaciones
 
+Ambas aplicaciones están expuestas mediante **LoadBalancer**, lo que significa que tienen una IP pública accesible desde internet.
+
 ### Zipkin
 
 - **Puerto**: 9411
 - **Health Check**: `/health`
-- **Acceso**: A través del servicio ClusterIP `zipkin` en el namespace correspondiente
+- **Tipo de Servicio**: LoadBalancer
+- **Acceso**: 
+  - Después del despliegue, el pipeline mostrará la URL completa
+  - Formato: `http://<EXTERNAL-IP>:9411`
+  - Puedes verificar la IP con: `kubectl get service zipkin -n <namespace>`
 
 ### SonarQube
 
 - **Puerto**: 9000
 - **Health Check**: `/api/system/status`
-- **Acceso**: A través del servicio ClusterIP `sonarqube` en el namespace correspondiente
+- **Tipo de Servicio**: LoadBalancer
+- **Acceso**: 
+  - Después del despliegue, el pipeline mostrará la URL completa
+  - Formato: `http://<EXTERNAL-IP>:9000`
+  - Puedes verificar la IP con: `kubectl get service sonarqube -n <namespace>`
 - **Credenciales por defecto**: admin/admin (cambiar en el primer acceso)
+
+### Notas Importantes
+
+1. **IP Externa**: La asignación de la IP externa puede tardar 2-5 minutos después del despliegue
+2. **Verificación**: Los pipelines verifican automáticamente la disponibilidad de la IP y la salud del servicio
+3. **Re-despliegue**: Si el servicio ya existe, se actualizará sin conflictos (idempotente)
 
 ## Recursos Requeridos
 
@@ -159,13 +175,21 @@ Cada ambiente utiliza un namespace diferente en Kubernetes:
 
 ## Notas Importantes
 
-1. **Secrets**: La contraseña de la base de datos está hardcodeada en `secret.yaml`. Para producción, se recomienda usar Azure Key Vault.
+1. **Secrets**: Todas las contraseñas están en variables secretas. **NO** están hardcodeadas en los archivos.
 
 2. **Storage**: SonarQube requiere PersistentVolumeClaims. Asegúrate de que tu cluster de AKS tenga un StorageClass configurado.
 
-3. **Red**: Los servicios están configurados como ClusterIP. Si necesitas acceso externo, considera usar Ingress o LoadBalancer.
+3. **Red**: Los servicios están configurados como **LoadBalancer** para acceso externo directo. Cada servicio obtendrá su propia IP pública.
 
 4. **Escalabilidad**: Las aplicaciones están configuradas con 1 réplica. Ajusta según tus necesidades.
+
+5. **Idempotencia**: Los pipelines son idempotentes - puedes ejecutarlos múltiples veces sin conflictos. Verifican si los recursos ya existen antes de crearlos.
+
+6. **Verificación Automática**: Los pipelines verifican automáticamente:
+   - Estado de los deployments
+   - Estado de los servicios
+   - Asignación de IP externa del LoadBalancer
+   - Salud del servicio (health checks)
 
 ## Troubleshooting
 
