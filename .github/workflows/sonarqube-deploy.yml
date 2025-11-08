@@ -1,0 +1,131 @@
+name: Deploy SonarQube to Kubernetes
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Ambiente de despliegue'
+        required: true
+        type: choice
+        options:
+          - dev
+          - stage
+          - prod
+          - all
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Install envsubst
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gettext-base
+
+      - name: Deploy SonarQube
+        env:
+          AZURE_RESOURCE_GROUP_DEV: ${{ secrets.AZURE_RESOURCE_GROUP_DEV }}
+          AKS_CLUSTER_NAME_DEV: ${{ secrets.AKS_CLUSTER_NAME_DEV }}
+          AZURE_RESOURCE_GROUP_STAGE: ${{ secrets.AZURE_RESOURCE_GROUP_STAGE }}
+          AKS_CLUSTER_NAME_STAGE: ${{ secrets.AKS_CLUSTER_NAME_STAGE }}
+          AZURE_RESOURCE_GROUP_PROD: ${{ secrets.AZURE_RESOURCE_GROUP_PROD }}
+          AKS_CLUSTER_NAME_PROD: ${{ secrets.AKS_CLUSTER_NAME_PROD }}
+          SONARQUBE_DB_PASSWORD: ${{ secrets.SONARQUBE_DB_PASSWORD }}
+        run: |
+          ENVIRONMENTS="${{ github.event.inputs.environment }}"
+          
+          if [ "$ENVIRONMENTS" = "all" ]; then
+            ENVIRONMENTS="dev stage prod"
+          fi
+          
+          for env in $ENVIRONMENTS; do
+            echo "Desplegando SonarQube en ambiente: $env"
+            
+            # Obtener variables según el ambiente
+            RESOURCE_GROUP_VAR="AZURE_RESOURCE_GROUP_${env^^}"
+            CLUSTER_NAME_VAR="AKS_CLUSTER_NAME_${env^^}"
+            RESOURCE_GROUP="${!RESOURCE_GROUP_VAR}"
+            CLUSTER_NAME="${!CLUSTER_NAME_VAR}"
+            
+            if [ -z "$RESOURCE_GROUP" ] || [ -z "$CLUSTER_NAME" ]; then
+              echo "ERROR: Variables no configuradas para el ambiente $env"
+              echo "RESOURCE_GROUP: $RESOURCE_GROUP"
+              echo "CLUSTER_NAME: $CLUSTER_NAME"
+              exit 1
+            fi
+            
+            echo "Conectando al cluster $CLUSTER_NAME en resource group $RESOURCE_GROUP"
+            az aks get-credentials \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "$CLUSTER_NAME" \
+              --overwrite-existing
+            
+            # Crear namespace si no existe
+            kubectl create namespace $env --dry-run=client -o yaml | kubectl apply -f -
+            
+            # Aplicar manifests con substitución de variables
+            export NAMESPACE=$env
+            export SONARQUBE_DB_PASSWORD="${{ secrets.SONARQUBE_DB_PASSWORD }}"
+            envsubst < k8s/sonarqube/secret.yaml | kubectl apply -f -
+            envsubst < k8s/sonarqube/pvc.yaml | kubectl apply -f -
+            envsubst < k8s/sonarqube/postgres-deployment.yaml | kubectl apply -f -
+            
+            # Esperar a que la base de datos esté lista
+            echo "Esperando a que la base de datos esté lista..."
+            kubectl wait --for=condition=ready pod -l app=sonarqube-db -n $env --timeout=300s
+            
+            envsubst < k8s/sonarqube/deployment.yaml | kubectl apply -f -
+            envsubst < k8s/sonarqube/service.yaml | kubectl apply -f -
+            
+            echo "SonarQube desplegado exitosamente en $env"
+          done
+
+      - name: Verify deployment
+        env:
+          AZURE_RESOURCE_GROUP_DEV: ${{ secrets.AZURE_RESOURCE_GROUP_DEV }}
+          AKS_CLUSTER_NAME_DEV: ${{ secrets.AKS_CLUSTER_NAME_DEV }}
+          AZURE_RESOURCE_GROUP_STAGE: ${{ secrets.AZURE_RESOURCE_GROUP_STAGE }}
+          AKS_CLUSTER_NAME_STAGE: ${{ secrets.AKS_CLUSTER_NAME_STAGE }}
+          AZURE_RESOURCE_GROUP_PROD: ${{ secrets.AZURE_RESOURCE_GROUP_PROD }}
+          AKS_CLUSTER_NAME_PROD: ${{ secrets.AKS_CLUSTER_NAME_PROD }}
+        run: |
+          ENVIRONMENTS="${{ github.event.inputs.environment }}"
+          
+          if [ "$ENVIRONMENTS" = "all" ]; then
+            ENVIRONMENTS="dev stage prod"
+          fi
+          
+          for env in $ENVIRONMENTS; do
+            echo "Verificando despliegue en ambiente: $env"
+            
+            # Obtener variables según el ambiente
+            RESOURCE_GROUP_VAR="AZURE_RESOURCE_GROUP_${env^^}"
+            CLUSTER_NAME_VAR="AKS_CLUSTER_NAME_${env^^}"
+            RESOURCE_GROUP="${!RESOURCE_GROUP_VAR}"
+            CLUSTER_NAME="${!CLUSTER_NAME_VAR}"
+            
+            az aks get-credentials \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "$CLUSTER_NAME" \
+              --overwrite-existing
+            
+            kubectl get deployment sonarqube -n $env
+            kubectl get deployment sonarqube-db -n $env
+            kubectl get service sonarqube -n $env
+            kubectl get service sonarqube-db -n $env
+            kubectl rollout status deployment/sonarqube -n $env --timeout=600s
+          done
+
