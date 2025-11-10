@@ -1,223 +1,110 @@
-# Ecommerce Apps - Kubernetes Deployment
+# Zipkin en AKS
 
-Este repositorio contiene las definiciones de Kubernetes y pipelines de Azure DevOps para desplegar aplicaciones en Azure Kubernetes Service (AKS).
-
-## Aplicaciones
-
-- **Zipkin**: Sistema de trazabilidad distribuida
-- **SonarQube**: Plataforma de análisis de calidad de código
+Este repositorio contiene los manifests de Kubernetes y el workflow de GitHub Actions necesarios para desplegar Zipkin en un clúster de Azure Kubernetes Service (AKS).
 
 ## Estructura del Proyecto
 
 ```
 .
-├── k8s/                    # Manifests de Kubernetes
-│   ├── zipkin/
-│   │   ├── deployment.yaml
-│   │   └── service.yaml
-│   └── sonarqube/
+├── k8s/
+│   └── zipkin/
 │       ├── deployment.yaml
-│       ├── service.yaml
-│       ├── pvc.yaml
-│       ├── secret.yaml
-│       └── postgres-deployment.yaml
-├── pipelines/              # Pipelines de Azure DevOps
-│   ├── zipkin-deploy.yml
-│   ├── sonarqube-deploy.yml
-│   └── deploy-all.yml
-├── .github/workflows/      # Pipelines de GitHub Actions
-│   ├── zipkin-deploy.yml
-│   ├── sonarqube-deploy.yml
-│   └── deploy-all.yml
-├── scripts/                # Scripts de ayuda
-│   └── deploy.sh
-├── SECRETS.md              # Documentación de variables secretas
+│       └── service.yaml
+├── .github/workflows/
+│   └── zipkin-deploy.yml
+├── SECRETS.md
 └── README.md
 ```
 
-## Configuración Previa
+## Requisitos Previos
 
-### 1. Variables Secretas
+1. **Repositorio conectado a AKS**
+   - Debes tener un Service Principal con permisos sobre los tres clusters (dev, stage, prod).
 
-**IMPORTANTE**: Todas las credenciales y contraseñas deben configurarse como variables secretas. **NO** deben estar hardcodeadas en los archivos.
+2. **Secrets en GitHub**
+   - Configura los secrets descritos en [SECRETS.md](SECRETS.md). Son diferentes por ambiente (dev, stage, prod) porque cada uno usa su propio **Resource Group** y **AKS**.
 
-Consulta el archivo [SECRETS.md](SECRETS.md) para ver el listado completo de variables secretas requeridas según la plataforma que uses:
+3. **Cluster preparado**
+   - AKS debe contar con un `StorageClass` por defecto (Zipkin usa almacenamiento en memoria, pero el cluster se usa para más servicios).
 
-- **GitHub Actions**: Configura los secrets en Settings → Secrets and variables → Actions
-- **Azure DevOps**: Configura las variables en Pipelines → Library (Variable Group `k8s-config`)
+## Workflow: `.github/workflows/zipkin-deploy.yml`
 
-### 2. Variables Secretas Requeridas
+- Trigger manual (`workflow_dispatch`).
+- Parámetro `environment` con las opciones: `dev`, `stage`, `prod` o `all`.
+- Acciones que realiza:
+  1. Inicia sesión en Azure y obtiene las credenciales del cluster correspondiente.
+  2. Crea/actualiza el namespace (`dev`, `stage`, `prod`).
+  3. Aplica los manifests de Zipkin (`deployment` y `service`).
+  4. Espera el rollout del deployment.
+  5. Lista pods y endpoints del servicio.
+  6. Muestra la URL interna para consumir Zipkin dentro del cluster.
 
-**IMPORTANTE**: Cada ambiente (dev, stage, prod) tiene su propio Resource Group y cluster de Kubernetes, por lo que se requieren variables separadas para cada uno.
+### Cómo ejecutarlo
 
-#### Para GitHub Actions (8 secrets):
-- `AZURE_CREDENTIALS` - Credenciales de Azure (Service Principal JSON)
-- `AZURE_RESOURCE_GROUP_DEV` - Resource Group para DEV
-- `AZURE_RESOURCE_GROUP_STAGE` - Resource Group para STAGE
-- `AZURE_RESOURCE_GROUP_PROD` - Resource Group para PROD
-- `AKS_CLUSTER_NAME_DEV` - Cluster AKS para DEV
-- `AKS_CLUSTER_NAME_STAGE` - Cluster AKS para STAGE
-- `AKS_CLUSTER_NAME_PROD` - Cluster AKS para PROD
-- `SONARQUBE_DB_PASSWORD` - Contraseña de la base de datos PostgreSQL
+1. GitHub → Actions → `zipkin-deploy`
+2. `Run workflow`
+3. Selecciona el ambiente y ejecuta.
 
-#### Para Azure DevOps (7 variables + 1 service connection):
-- Variable Group `k8s-config`:
-  - `resourceGroup_dev` - Resource Group para DEV
-  - `resourceGroup_stage` - Resource Group para STAGE
-  - `resourceGroup_prod` - Resource Group para PROD
-  - `aksClusterName_dev` - Cluster AKS para DEV
-  - `aksClusterName_stage` - Cluster AKS para STAGE
-  - `aksClusterName_prod` - Cluster AKS para PROD
-  - `SONARQUBE_DB_PASSWORD` (como variable secreta) - Contraseña de la base de datos
-- Service Connection: `Azure-Kubernetes-Service`
+## Ambientes y Namespaces
 
-Ver [SECRETS.md](SECRETS.md) para instrucciones detalladas y el listado completo.
+| Ambiente | Namespace |
+|----------|-----------|
+| dev      | `dev`     |
+| stage    | `stage`   |
+| prod     | `prod`    |
 
-## Pipelines
+Cuando eliges la opción `all`, el workflow itera en ese orden: dev → stage → prod.
 
-Este proyecto incluye pipelines para dos plataformas:
+## Manifests de Zipkin
 
-### Azure DevOps Pipelines (`pipelines/`)
+- `k8s/zipkin/deployment.yaml`
+  - Imagen: `openzipkin/zipkin:latest`
+  - Requests/Limits: 250m CPU / 512Mi RAM (request), 500m CPU / 1Gi RAM (limit)
+  - Readiness & Liveness probes: `GET /health`
 
-Pipelines YAML para Azure DevOps con triggers manuales.
+- `k8s/zipkin/service.yaml`
+  - Tipo: `ClusterIP`
+  - Puerto: `9411`
+  - Proporciona un DNS interno: `zipkin.<namespace>.svc.cluster.local`
 
-#### Pipeline: zipkin-deploy.yml
-- Despliega únicamente Zipkin
-- **Uso**: Azure DevOps → Pipelines → Ejecutar manualmente → Seleccionar ambiente
+## Acceso Interno
 
-#### Pipeline: sonarqube-deploy.yml
-- Despliega únicamente SonarQube (incluye PostgreSQL)
-- **Uso**: Azure DevOps → Pipelines → Ejecutar manualmente → Seleccionar ambiente
+Zipkin **no** expone IP pública. Un microservicio dentro del cluster puede usar la URL:
 
-#### Pipeline: deploy-all.yml
-- Despliega todas las aplicaciones (Zipkin y SonarQube)
-- **Uso**: Azure DevOps → Pipelines → Ejecutar manualmente → Seleccionar ambiente
+- Mismo namespace: `http://zipkin:9411`
+- Distinto namespace (ej. ambiente dev): `http://zipkin.dev:9411`
+- FQDN completo: `http://zipkin.dev.svc.cluster.local:9411`
 
-### GitHub Actions Workflows (`.github/workflows/`)
+El workflow mostrará estos detalles al finalizar el despliegue.
 
-Workflows para GitHub Actions con triggers manuales (workflow_dispatch).
+## Recursos Necesarios
 
-#### Workflow: zipkin-deploy.yml
-- Despliega únicamente Zipkin
-- **Uso**: GitHub → Actions → Seleccionar workflow → Run workflow → Seleccionar ambiente
-
-#### Workflow: sonarqube-deploy.yml
-- Despliega únicamente SonarQube (incluye PostgreSQL)
-- **Uso**: GitHub → Actions → Seleccionar workflow → Run workflow → Seleccionar ambiente
-
-#### Workflow: deploy-all.yml
-- Despliega todas las aplicaciones (Zipkin y SonarQube)
-- **Uso**: GitHub → Actions → Seleccionar workflow → Run workflow → Seleccionar ambiente
-
-**Parámetros disponibles en todos los pipelines:**
-- `environment`: Ambiente de despliegue (dev, stage, prod, all)
-
-## Ambientes
-
-Los pipelines soportan 4 opciones de despliegue:
-
-- **dev**: Despliega solo en el ambiente de desarrollo
-- **stage**: Despliega solo en el ambiente de staging
-- **prod**: Despliega solo en el ambiente de producción
-- **all**: Despliega en los tres ambientes (dev, stage, prod)
-
-Cada ambiente utiliza un namespace diferente en Kubernetes:
-- `dev`
-- `stage`
-- `prod`
-
-## Acceso a las Aplicaciones
-
-Ambas aplicaciones están expuestas mediante **LoadBalancer**, lo que significa que tienen una IP pública accesible desde internet.
-
-### Zipkin
-
-- **Puerto**: 9411
-- **Health Check**: `/health`
-- **Tipo de Servicio**: LoadBalancer
-- **Acceso**: 
-  - Después del despliegue, el pipeline mostrará la URL completa
-  - Formato: `http://<EXTERNAL-IP>:9411`
-  - Puedes verificar la IP con: `kubectl get service zipkin -n <namespace>`
-
-### SonarQube
-
-- **Puerto**: 9000
-- **Health Check**: `/api/system/status`
-- **Tipo de Servicio**: LoadBalancer
-- **Acceso**: 
-  - Después del despliegue, el pipeline mostrará la URL completa
-  - Formato: `http://<EXTERNAL-IP>:9000`
-  - Puedes verificar la IP con: `kubectl get service sonarqube -n <namespace>`
-- **Credenciales por defecto**: admin/admin (cambiar en el primer acceso)
-
-### Notas Importantes
-
-1. **IP Externa**: La asignación de la IP externa puede tardar 2-5 minutos después del despliegue
-2. **Verificación**: Los pipelines verifican automáticamente la disponibilidad de la IP y la salud del servicio
-3. **Re-despliegue**: Si el servicio ya existe, se actualizará sin conflictos (idempotente)
-
-## Recursos Requeridos
-
-### Zipkin
-- CPU: 250m (request) / 500m (limit)
-- Memoria: 512Mi (request) / 1Gi (limit)
-
-### SonarQube
-- CPU: 1000m (request) / 2000m (limit)
-- Memoria: 2Gi (request) / 4Gi (limit)
-- Almacenamiento: 35Gi total (20Gi datos + 10Gi extensiones + 5Gi logs)
-
-### PostgreSQL (SonarQube)
-- CPU: 250m (request) / 500m (limit)
-- Memoria: 512Mi (request) / 1Gi (limit)
-- Almacenamiento: 10Gi
+| Recurso | CPU (request/limit) | RAM (request/limit) |
+|---------|---------------------|---------------------|
+| Zipkin  | 250m / 500m         | 512Mi / 1Gi         |
 
 ## Notas Importantes
 
-1. **Secrets**: Todas las contraseñas están en variables secretas. **NO** están hardcodeadas en los archivos.
-
-2. **Storage**: SonarQube requiere PersistentVolumeClaims. Asegúrate de que tu cluster de AKS tenga un StorageClass configurado.
-
-3. **Red**: Los servicios están configurados como **LoadBalancer** para acceso externo directo. Cada servicio obtendrá su propia IP pública.
-
-4. **Escalabilidad**: Las aplicaciones están configuradas con 1 réplica. Ajusta según tus necesidades.
-
-5. **Idempotencia**: Los pipelines son idempotentes - puedes ejecutarlos múltiples veces sin conflictos. Verifican si los recursos ya existen antes de crearlos.
-
-6. **Verificación Automática**: Los pipelines verifican automáticamente:
-   - Estado de los deployments
-   - Estado de los servicios
-   - Asignación de IP externa del LoadBalancer
-   - Salud del servicio (health checks)
+1. **Idempotencia**: Puedes ejecutar el workflow cuantas veces quieras. Usa `kubectl apply`, por lo que actualiza sin conflictos.
+2. **Namespaces**: Los crea si no existen. Si ya están presentes, simplemente los reutiliza.
+3. **Acceso**: Al ser `ClusterIP`, solo es accesible desde dentro del cluster. Para exponerlo externamente tendrías que crear un Ingress o cambiar el tipo de servicio.
+4. **Tracing**: Configura tus microservicios para enviar trazas a `http://zipkin.<namespace>:9411`.
 
 ## Troubleshooting
 
-### Verificar el estado de los pods
-
 ```bash
+# Ver pods
 kubectl get pods -n <namespace>
+
+# Logs de Zipkin
+a) kubectl logs deployment/zipkin -n <namespace>
+
+# Detalles del servicio (ClusterIP)
+kubectl get svc zipkin -n <namespace>
+
+# Endpoints registrados
+a) kubectl get endpoints zipkin -n <namespace>
 ```
 
-### Ver logs de una aplicación
-
-```bash
-# Zipkin
-kubectl logs -f deployment/zipkin -n <namespace>
-
-# SonarQube
-kubectl logs -f deployment/sonarqube -n <namespace>
-```
-
-### Verificar servicios
-
-```bash
-kubectl get svc -n <namespace>
-```
-
-### Reiniciar un deployment
-
-```bash
-kubectl rollout restart deployment/<deployment-name> -n <namespace>
-```
+Si el rollout falla, revisa `kubectl describe pod -l app=zipkin -n <namespace>` para ver eventos y errores.
 
