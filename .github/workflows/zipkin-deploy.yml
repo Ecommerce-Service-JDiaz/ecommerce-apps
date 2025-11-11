@@ -35,14 +35,78 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gettext-base
 
+      - name: Obtener secrets de Azure Key Vault
+        id: get-kv-secrets
+        run: |
+          KEY_VAULT_NAME="ecommercekv8486"
+          KEY_VAULT_RG="ecommerce-rg-global"
+          
+          echo "Obteniendo secrets del Key Vault: $KEY_VAULT_NAME"
+          
+          # Obtener Resource Groups
+          AZURE_RESOURCE_GROUP_DEV=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name "AZURE-RESOURCE-GROUP-DEV" --query "value" -o tsv)
+          AZURE_RESOURCE_GROUP_STAGE=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name "AZURE-RESOURCE-GROUP-STAGE" --query "value" -o tsv)
+          AZURE_RESOURCE_GROUP_PROD=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name "AZURE-RESOURCE-GROUP-PROD" --query "value" -o tsv)
+          
+          # Obtener Cluster Names
+          AKS_CLUSTER_NAME_DEV=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name "AKS-CLUSTER-NAME-DEV" --query "value" -o tsv)
+          AKS_CLUSTER_NAME_STAGE=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name "AKS-CLUSTER-NAME-STAGE" --query "value" -o tsv)
+          AKS_CLUSTER_NAME_PROD=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name "AKS-CLUSTER-NAME-PROD" --query "value" -o tsv)
+          
+          # Validar que se obtuvieron todos los secrets
+          if [ -z "$AZURE_RESOURCE_GROUP_DEV" ] || [ -z "$AZURE_RESOURCE_GROUP_STAGE" ] || [ -z "$AZURE_RESOURCE_GROUP_PROD" ]; then
+            echo "ERROR: No se pudieron obtener los Resource Groups del Key Vault"
+            exit 1
+          fi
+          
+          if [ -z "$AKS_CLUSTER_NAME_DEV" ] || [ -z "$AKS_CLUSTER_NAME_STAGE" ] || [ -z "$AKS_CLUSTER_NAME_PROD" ]; then
+            echo "ERROR: No se pudieron obtener los Cluster Names del Key Vault"
+            exit 1
+          fi
+          
+          # Enmascarar los valores para que no se expongan en los logs
+          echo "::add-mask::$AZURE_RESOURCE_GROUP_DEV"
+          echo "::add-mask::$AZURE_RESOURCE_GROUP_STAGE"
+          echo "::add-mask::$AZURE_RESOURCE_GROUP_PROD"
+          echo "::add-mask::$AKS_CLUSTER_NAME_DEV"
+          echo "::add-mask::$AKS_CLUSTER_NAME_STAGE"
+          echo "::add-mask::$AKS_CLUSTER_NAME_PROD"
+          
+          # Exportar como variables de salida (usando delimitadores para valores multilínea)
+          echo "AZURE_RESOURCE_GROUP_DEV<<EOF" >> $GITHUB_OUTPUT
+          echo "$AZURE_RESOURCE_GROUP_DEV" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "AZURE_RESOURCE_GROUP_STAGE<<EOF" >> $GITHUB_OUTPUT
+          echo "$AZURE_RESOURCE_GROUP_STAGE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "AZURE_RESOURCE_GROUP_PROD<<EOF" >> $GITHUB_OUTPUT
+          echo "$AZURE_RESOURCE_GROUP_PROD" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "AKS_CLUSTER_NAME_DEV<<EOF" >> $GITHUB_OUTPUT
+          echo "$AKS_CLUSTER_NAME_DEV" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "AKS_CLUSTER_NAME_STAGE<<EOF" >> $GITHUB_OUTPUT
+          echo "$AKS_CLUSTER_NAME_STAGE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "AKS_CLUSTER_NAME_PROD<<EOF" >> $GITHUB_OUTPUT
+          echo "$AKS_CLUSTER_NAME_PROD" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "✅ Secrets obtenidos exitosamente del Key Vault (valores enmascarados en logs)"
+
       - name: Deploy Zipkin
         env:
-          AZURE_RESOURCE_GROUP_DEV: ${{ secrets.AZURE_RESOURCE_GROUP_DEV }}
-          AKS_CLUSTER_NAME_DEV: ${{ secrets.AKS_CLUSTER_NAME_DEV }}
-          AZURE_RESOURCE_GROUP_STAGE: ${{ secrets.AZURE_RESOURCE_GROUP_STAGE }}
-          AKS_CLUSTER_NAME_STAGE: ${{ secrets.AKS_CLUSTER_NAME_STAGE }}
-          AZURE_RESOURCE_GROUP_PROD: ${{ secrets.AZURE_RESOURCE_GROUP_PROD }}
-          AKS_CLUSTER_NAME_PROD: ${{ secrets.AKS_CLUSTER_NAME_PROD }}
+          AZURE_RESOURCE_GROUP_DEV: ${{ steps.get-kv-secrets.outputs.AZURE_RESOURCE_GROUP_DEV }}
+          AKS_CLUSTER_NAME_DEV: ${{ steps.get-kv-secrets.outputs.AKS_CLUSTER_NAME_DEV }}
+          AZURE_RESOURCE_GROUP_STAGE: ${{ steps.get-kv-secrets.outputs.AZURE_RESOURCE_GROUP_STAGE }}
+          AKS_CLUSTER_NAME_STAGE: ${{ steps.get-kv-secrets.outputs.AKS_CLUSTER_NAME_STAGE }}
+          AZURE_RESOURCE_GROUP_PROD: ${{ steps.get-kv-secrets.outputs.AZURE_RESOURCE_GROUP_PROD }}
+          AKS_CLUSTER_NAME_PROD: ${{ steps.get-kv-secrets.outputs.AKS_CLUSTER_NAME_PROD }}
         run: |
           ENVIRONMENTS="${{ github.event.inputs.environment }}"
           
@@ -61,12 +125,16 @@ jobs:
             
             if [ -z "$RESOURCE_GROUP" ] || [ -z "$CLUSTER_NAME" ]; then
               echo "ERROR: Variables no configuradas para el ambiente $env"
-              echo "RESOURCE_GROUP: $RESOURCE_GROUP"
-              echo "CLUSTER_NAME: $CLUSTER_NAME"
+              echo "RESOURCE_GROUP: [ENMASCARADO]"
+              echo "CLUSTER_NAME: [ENMASCARADO]"
               exit 1
             fi
             
-            echo "Conectando al cluster $CLUSTER_NAME en resource group $RESOURCE_GROUP"
+            # Enmascarar valores antes de usarlos en comandos
+            echo "::add-mask::$RESOURCE_GROUP"
+            echo "::add-mask::$CLUSTER_NAME"
+            
+            echo "Conectando al cluster [ENMASCARADO] en resource group [ENMASCARADO]"
             az aks get-credentials \
               --resource-group "$RESOURCE_GROUP" \
               --name "$CLUSTER_NAME" \
@@ -101,12 +169,12 @@ jobs:
 
       - name: Verify deployment
         env:
-          AZURE_RESOURCE_GROUP_DEV: ${{ secrets.AZURE_RESOURCE_GROUP_DEV }}
-          AKS_CLUSTER_NAME_DEV: ${{ secrets.AKS_CLUSTER_NAME_DEV }}
-          AZURE_RESOURCE_GROUP_STAGE: ${{ secrets.AZURE_RESOURCE_GROUP_STAGE }}
-          AKS_CLUSTER_NAME_STAGE: ${{ secrets.AKS_CLUSTER_NAME_STAGE }}
-          AZURE_RESOURCE_GROUP_PROD: ${{ secrets.AZURE_RESOURCE_GROUP_PROD }}
-          AKS_CLUSTER_NAME_PROD: ${{ secrets.AKS_CLUSTER_NAME_PROD }}
+          AZURE_RESOURCE_GROUP_DEV: ${{ steps.get-kv-secrets.outputs.AZURE_RESOURCE_GROUP_DEV }}
+          AKS_CLUSTER_NAME_DEV: ${{ steps.get-kv-secrets.outputs.AKS_CLUSTER_NAME_DEV }}
+          AZURE_RESOURCE_GROUP_STAGE: ${{ steps.get-kv-secrets.outputs.AZURE_RESOURCE_GROUP_STAGE }}
+          AKS_CLUSTER_NAME_STAGE: ${{ steps.get-kv-secrets.outputs.AKS_CLUSTER_NAME_STAGE }}
+          AZURE_RESOURCE_GROUP_PROD: ${{ steps.get-kv-secrets.outputs.AZURE_RESOURCE_GROUP_PROD }}
+          AKS_CLUSTER_NAME_PROD: ${{ steps.get-kv-secrets.outputs.AKS_CLUSTER_NAME_PROD }}
         run: |
           ENVIRONMENTS="${{ github.event.inputs.environment }}"
           
@@ -122,6 +190,10 @@ jobs:
             CLUSTER_NAME_VAR="AKS_CLUSTER_NAME_${env^^}"
             RESOURCE_GROUP="${!RESOURCE_GROUP_VAR}"
             CLUSTER_NAME="${!CLUSTER_NAME_VAR}"
+            
+            # Enmascarar valores antes de usarlos
+            echo "::add-mask::$RESOURCE_GROUP"
+            echo "::add-mask::$CLUSTER_NAME"
             
             az aks get-credentials \
               --resource-group "$RESOURCE_GROUP" \

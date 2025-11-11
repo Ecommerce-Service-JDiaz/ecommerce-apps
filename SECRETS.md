@@ -1,16 +1,16 @@
 # Secrets Requeridos
 
-Este proyecto usa GitHub Actions para desplegar Zipkin en tres ambientes (dev, stage, prod). Cada ambiente está en un Resource Group y un cluster de AKS distinto, por lo que necesitas un conjunto de secrets por ambiente más las credenciales del Service Principal.
+Este proyecto usa GitHub Actions para desplegar Zipkin en tres ambientes (dev, stage, prod). Los secrets se almacenan en **Azure Key Vault** (excepto `AZURE_CREDENTIALS` que se mantiene en GitHub Secrets).
 
-## GitHub Actions
+## Configuración
 
-Configura los secrets en tu repositorio:
+### 1. GitHub Secrets
 
-1. GitHub → Settings → Secrets and variables → **Actions** → New repository secret
-2. Repite para cada secret listado abajo.
+Solo necesitas configurar **1 secret** en GitHub:
 
-### 1. `AZURE_CREDENTIALS` (JSON)
-- **Descripción**: Credenciales del Service Principal con acceso a los tres clusters
+#### `AZURE_CREDENTIALS` (JSON)
+- **Descripción**: Credenciales del Service Principal con acceso a los clusters AKS y al Key Vault
+- **Ubicación**: GitHub → Settings → Secrets and variables → Actions → New repository secret
 - **Formato**:
   ```json
   {
@@ -30,48 +30,127 @@ Configura los secrets en tu repositorio:
   ```
   > Guarda el JSON completo tal cual en el secret `AZURE_CREDENTIALS`.
 
-### 2. Resource Groups por ambiente
-| Secret | ¿Sensible? | Ejemplo |
-|--------|------------|---------|
-| `AZURE_RESOURCE_GROUP_DEV`   | No  | `rg-aks-dev`   |
-| `AZURE_RESOURCE_GROUP_STAGE` | No  | `rg-aks-stage` |
-| `AZURE_RESOURCE_GROUP_PROD`  | No  | `rg-aks-prod`  |
+**IMPORTANTE**: El Service Principal debe tener permisos para:
+- Acceder a los clusters AKS (dev, stage, prod)
+- Leer secrets del Azure Key Vault `ecommercekv8486`
 
-- Deben ser los nombres de los Resource Groups donde vive cada cluster de AKS.
-- Aunque no son secretos, conviene guardarlos como secrets para mantener todo centralizado.
+### 2. Azure Key Vault
 
-### 3. Nombres de los clusters AKS
-| Secret | ¿Sensible? | Ejemplo |
-|--------|------------|---------|
-| `AKS_CLUSTER_NAME_DEV`   | No  | `aks-dev`   |
-| `AKS_CLUSTER_NAME_STAGE` | No  | `aks-stage` |
-| `AKS_CLUSTER_NAME_PROD`  | No  | `aks-prod`  |
+Los siguientes secrets deben estar configurados en el Key Vault:
 
-- Deben coincidir exactamente con el nombre del cluster AKS en cada ambiente.
+**Key Vault**: `ecommercekv8486`  
+**Resource Group**: `ecommerce-rg-global`
+
+#### Secrets Requeridos en el Key Vault:
+
+| Nombre en Key Vault | Descripción | Ejemplo |
+|---------------------|-------------|---------|
+| `AZURE-RESOURCE-GROUP-DEV` | Resource Group del cluster **dev** | `rg-aks-dev` |
+| `AZURE-RESOURCE-GROUP-STAGE` | Resource Group del cluster **stage** | `rg-aks-stage` |
+| `AZURE-RESOURCE-GROUP-PROD` | Resource Group del cluster **prod** | `rg-aks-prod` |
+| `AKS-CLUSTER-NAME-DEV` | Nombre del cluster AKS en **dev** | `aks-dev` |
+| `AKS-CLUSTER-NAME-STAGE` | Nombre del cluster AKS en **stage** | `aks-stage` |
+| `AKS-CLUSTER-NAME-PROD` | Nombre del cluster AKS en **prod** | `aks-prod` |
+
+#### Cómo agregar/actualizar secrets en el Key Vault:
+
+```bash
+KEY_VAULT_NAME="ecommercekv8486"
+RESOURCE_GROUP="ecommerce-rg-global"
+
+# Ejemplo: Agregar Resource Group de DEV
+az keyvault secret set \
+  --vault-name "$KEY_VAULT_NAME" \
+  --name "AZURE-RESOURCE-GROUP-DEV" \
+  --value "rg-aks-dev"
+
+# Ejemplo: Agregar Cluster Name de DEV
+az keyvault secret set \
+  --vault-name "$KEY_VAULT_NAME" \
+  --name "AKS-CLUSTER-NAME-DEV" \
+  --value "aks-dev"
+```
+
+#### Verificar secrets en el Key Vault:
+
+```bash
+az keyvault secret list --vault-name ecommercekv8486 -o table
+```
 
 ## Resumen
 
-| Secret | Uso |
-|--------|-----|
-| `AZURE_CREDENTIALS` | Autenticación en Azure (Service Principal)
-| `AZURE_RESOURCE_GROUP_DEV` | Resource Group del cluster **dev**
-| `AZURE_RESOURCE_GROUP_STAGE` | Resource Group del cluster **stage**
-| `AZURE_RESOURCE_GROUP_PROD` | Resource Group del cluster **prod**
-| `AKS_CLUSTER_NAME_DEV` | Nombre del cluster AKS en **dev**
-| `AKS_CLUSTER_NAME_STAGE` | Nombre del cluster AKS en **stage**
-| `AKS_CLUSTER_NAME_PROD` | Nombre del cluster AKS en **prod**
+| Ubicación | Secret | Uso |
+|-----------|--------|-----|
+| **GitHub Secrets** | `AZURE_CREDENTIALS` | Autenticación en Azure (Service Principal) |
+| **Azure Key Vault** | `AZURE-RESOURCE-GROUP-DEV` | Resource Group del cluster **dev** |
+| **Azure Key Vault** | `AZURE-RESOURCE-GROUP-STAGE` | Resource Group del cluster **stage** |
+| **Azure Key Vault** | `AZURE-RESOURCE-GROUP-PROD` | Resource Group del cluster **prod** |
+| **Azure Key Vault** | `AKS-CLUSTER-NAME-DEV` | Nombre del cluster AKS en **dev** |
+| **Azure Key Vault** | `AKS-CLUSTER-NAME-STAGE` | Nombre del cluster AKS en **stage** |
+| **Azure Key Vault** | `AKS-CLUSTER-NAME-PROD` | Nombre del cluster AKS en **prod** |
 
-Total: **7 secrets**.
+**Total**: 1 secret en GitHub + 6 secrets en Azure Key Vault
+
+## Permisos Requeridos
+
+El Service Principal (`AZURE_CREDENTIALS`) debe tener:
+
+1. **Permisos en los clusters AKS**:
+   - Rol: `Azure Kubernetes Service RBAC Cluster Admin` o similar
+   - Scope: Cada cluster AKS (dev, stage, prod)
+
+2. **Permisos en el Key Vault**:
+   - Política de acceso: `Get` y `List` en secrets
+   - Puedes asignarlo con:
+     ```bash
+     az keyvault set-policy \
+       --name ecommercekv8486 \
+       --spn <clientId-del-service-principal> \
+       --secret-permissions get list
+     ```
 
 ## Buenas Prácticas
 
-- El Service Principal debe tener únicamente los permisos necesarios (idealmente *Azure Kubernetes Service RBAC Cluster Admin* sobre cada cluster).
+- El Service Principal debe tener únicamente los permisos necesarios (principio de menor privilegio).
 - Rota las credenciales del Service Principal periódicamente.
-- Si agregas ambientes nuevos, sigue el patrón `AZURE_RESOURCE_GROUP_<ENV>` y `AKS_CLUSTER_NAME_<ENV>`.
-- Considera almacenar estos secrets en Azure Key Vault y sincronizarlos automáticamente si tu gobernanza lo requiere.
+- Los secrets en Key Vault se pueden rotar sin cambiar el código del workflow.
+- Considera habilitar soft-delete y purge protection en el Key Vault para mayor seguridad.
 
 ## Troubleshooting
 
-- **`Secret not found`**: Verifica mayúsculas/minúsculas y que el secret esté en el repositorio correcto.
-- **`Authentication failed`**: Asegúrate de que `AZURE_CREDENTIALS` contenga el JSON completo y que el Service Principal no esté expirado.
-- **`Cannot connect to AKS`**: Revisa que los nombres de Resource Group y Cluster coincidan con el ambiente seleccionado y que el Service Principal tenga permisos sobre ese cluster.
+### Error: "Secret not found" en GitHub
+- Verifica que `AZURE_CREDENTIALS` esté configurado en GitHub Secrets
+- Verifica mayúsculas/minúsculas exactas
+
+### Error: "No se pudieron obtener los Resource Groups del Key Vault"
+- Verifica que el Service Principal tenga permisos `Get` y `List` en el Key Vault
+- Verifica que el Key Vault `ecommercekv8486` exista y esté accesible
+- Verifica que los nombres de los secrets en el Key Vault sean exactamente:
+  - `AZURE-RESOURCE-GROUP-DEV` (con guiones y mayúsculas)
+  - `AZURE-RESOURCE-GROUP-STAGE`
+  - `AZURE-RESOURCE-GROUP-PROD`
+  - `AKS-CLUSTER-NAME-DEV`
+  - `AKS-CLUSTER-NAME-STAGE`
+  - `AKS-CLUSTER-NAME-PROD`
+
+### Error: "Authentication failed"
+- Asegúrate de que `AZURE_CREDENTIALS` contenga el JSON completo y válido
+- Verifica que el Service Principal no esté expirado o deshabilitado
+
+### Error: "Cannot connect to AKS"
+- Revisa que los valores en el Key Vault sean correctos (Resource Group y Cluster Name)
+- Verifica que el Service Principal tenga permisos sobre el cluster específico del ambiente
+- Verifica que el cluster AKS esté accesible y en ejecución
+
+### Verificar permisos del Service Principal en Key Vault
+
+```bash
+# Ver políticas del Key Vault
+az keyvault show --name ecommercekv8486 --query properties.accessPolicies
+
+# Verificar que el SP tenga acceso
+az keyvault secret show \
+  --vault-name ecommercekv8486 \
+  --name AZURE-RESOURCE-GROUP-DEV \
+  --query "value" -o tsv
+```

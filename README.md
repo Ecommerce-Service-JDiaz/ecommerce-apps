@@ -21,8 +21,10 @@ Este repositorio contiene los manifests de Kubernetes y el workflow de GitHub Ac
 1. **Repositorio conectado a AKS**
    - Debes tener un Service Principal con permisos sobre los tres clusters (dev, stage, prod).
 
-2. **Secrets en GitHub**
-   - Configura los secrets descritos en [SECRETS.md](SECRETS.md). Son diferentes por ambiente (dev, stage, prod) porque cada uno usa su propio **Resource Group** y **AKS**.
+2. **Secrets Configurados**
+   - **GitHub Secrets**: Solo necesitas `AZURE_CREDENTIALS` (Service Principal)
+   - **Azure Key Vault**: Los demás secrets (Resource Groups y Cluster Names) se leen automáticamente del Key Vault `ecommercekv8486`
+   - Consulta [SECRETS.md](SECRETS.md) para la configuración completa
 
 3. **Cluster preparado**
    - AKS debe contar con un `StorageClass` por defecto (Zipkin usa almacenamiento en memoria, pero el cluster se usa para más servicios).
@@ -32,12 +34,14 @@ Este repositorio contiene los manifests de Kubernetes y el workflow de GitHub Ac
 - Trigger manual (`workflow_dispatch`).
 - Parámetro `environment` con las opciones: `dev`, `stage`, `prod` o `all`.
 - Acciones que realiza:
-  1. Inicia sesión en Azure y obtiene las credenciales del cluster correspondiente.
-  2. Crea/actualiza el namespace (`dev`, `stage`, `prod`).
-  3. Aplica los manifests de Zipkin (`deployment` y `service`).
-  4. Espera el rollout del deployment.
-  5. Lista pods y endpoints del servicio.
-  6. Muestra la URL interna para consumir Zipkin dentro del cluster.
+  1. Inicia sesión en Azure usando `AZURE_CREDENTIALS` de GitHub Secrets
+  2. Lee los secrets del Azure Key Vault (`ecommercekv8486`): Resource Groups y Cluster Names
+  3. Obtiene las credenciales del cluster correspondiente según el ambiente
+  4. Crea/actualiza el namespace (`dev`, `stage`, `prod`)
+  5. Aplica los manifests de Zipkin (`deployment` y `service`)
+  6. Espera el rollout del deployment
+  7. Lista pods y endpoints del servicio
+  8. Muestra la URL interna para consumir Zipkin dentro del cluster
 
 ### Cómo ejecutarlo
 
