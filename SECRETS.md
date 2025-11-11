@@ -32,14 +32,17 @@ Solo necesitas configurar **1 secret** en GitHub:
 
 **IMPORTANTE**: El Service Principal debe tener permisos para:
 - Acceder a los clusters AKS (dev, stage, prod)
-- Leer secrets del Azure Key Vault `ecommercekv8486`
+- Listar recursos en el Resource Group `ecommerce-rg-global` (para encontrar el Key Vault)
+- Leer secrets del Azure Key Vault (se detecta automáticamente)
 
 ### 2. Azure Key Vault
 
 Los siguientes secrets deben estar configurados en el Key Vault:
 
-**Key Vault**: `ecommercekv8486`  
+**Key Vault**: Se detecta automáticamente (el único Key Vault en el Resource Group)  
 **Resource Group**: `ecommerce-rg-global`
+
+> **Nota**: El pipeline busca dinámicamente el Key Vault en el Resource Group `ecommerce-rg-global`. Si hay un rollback y el nombre del Key Vault cambia, el pipeline lo detectará automáticamente.
 
 #### Secrets Requeridos en el Key Vault:
 
@@ -54,9 +57,15 @@ Los siguientes secrets deben estar configurados en el Key Vault:
 
 #### Cómo agregar/actualizar secrets en el Key Vault:
 
+Primero, obtén el nombre del Key Vault dinámicamente:
+
 ```bash
-KEY_VAULT_NAME="ecommercekv8486"
 RESOURCE_GROUP="ecommerce-rg-global"
+
+# Obtener el nombre del Key Vault
+KEY_VAULT_NAME=$(az keyvault list --resource-group "$RESOURCE_GROUP" --query "[0].name" -o tsv)
+
+echo "Key Vault encontrado: $KEY_VAULT_NAME"
 
 # Ejemplo: Agregar Resource Group de DEV
 az keyvault secret set \
@@ -74,7 +83,13 @@ az keyvault secret set \
 #### Verificar secrets en el Key Vault:
 
 ```bash
-az keyvault secret list --vault-name ecommercekv8486 -o table
+RESOURCE_GROUP="ecommerce-rg-global"
+
+# Obtener el nombre del Key Vault
+KEY_VAULT_NAME=$(az keyvault list --resource-group "$RESOURCE_GROUP" --query "[0].name" -o tsv)
+
+# Listar todos los secrets
+az keyvault secret list --vault-name "$KEY_VAULT_NAME" -o table
 ```
 
 ## Resumen
@@ -103,8 +118,14 @@ El Service Principal (`AZURE_CREDENTIALS`) debe tener:
    - Política de acceso: `Get` y `List` en secrets
    - Puedes asignarlo con:
      ```bash
+     RESOURCE_GROUP="ecommerce-rg-global"
+     
+     # Obtener el nombre del Key Vault
+     KEY_VAULT_NAME=$(az keyvault list --resource-group "$RESOURCE_GROUP" --query "[0].name" -o tsv)
+     
+     # Asignar permisos al Service Principal
      az keyvault set-policy \
-       --name ecommercekv8486 \
+       --name "$KEY_VAULT_NAME" \
        --spn <clientId-del-service-principal> \
        --secret-permissions get list
      ```
@@ -122,9 +143,13 @@ El Service Principal (`AZURE_CREDENTIALS`) debe tener:
 - Verifica que `AZURE_CREDENTIALS` esté configurado en GitHub Secrets
 - Verifica mayúsculas/minúsculas exactas
 
+### Error: "No se encontró ningún Key Vault en el Resource Group"
+- Verifica que exista al menos un Key Vault en el Resource Group `ecommerce-rg-global`
+- Verifica que el Service Principal tenga permisos para listar recursos en ese Resource Group
+
 ### Error: "No se pudieron obtener los Resource Groups del Key Vault"
 - Verifica que el Service Principal tenga permisos `Get` y `List` en el Key Vault
-- Verifica que el Key Vault `ecommercekv8486` exista y esté accesible
+- Verifica que el Key Vault exista y esté accesible en el Resource Group `ecommerce-rg-global`
 - Verifica que los nombres de los secrets en el Key Vault sean exactamente:
   - `AZURE-RESOURCE-GROUP-DEV` (con guiones y mayúsculas)
   - `AZURE-RESOURCE-GROUP-STAGE`
@@ -145,12 +170,17 @@ El Service Principal (`AZURE_CREDENTIALS`) debe tener:
 ### Verificar permisos del Service Principal en Key Vault
 
 ```bash
+RESOURCE_GROUP="ecommerce-rg-global"
+
+# Obtener el nombre del Key Vault
+KEY_VAULT_NAME=$(az keyvault list --resource-group "$RESOURCE_GROUP" --query "[0].name" -o tsv)
+
 # Ver políticas del Key Vault
-az keyvault show --name ecommercekv8486 --query properties.accessPolicies
+az keyvault show --name "$KEY_VAULT_NAME" --query properties.accessPolicies
 
 # Verificar que el SP tenga acceso
 az keyvault secret show \
-  --vault-name ecommercekv8486 \
+  --vault-name "$KEY_VAULT_NAME" \
   --name AZURE-RESOURCE-GROUP-DEV \
   --query "value" -o tsv
 ```

@@ -38,10 +38,20 @@ jobs:
       - name: Obtener secrets de Azure Key Vault
         id: get-kv-secrets
         run: |
-          KEY_VAULT_NAME="ecommercekv8486"
           KEY_VAULT_RG="ecommerce-rg-global"
           
-          echo "Obteniendo secrets del Key Vault: $KEY_VAULT_NAME"
+          echo "Buscando Key Vault en el Resource Group: $KEY_VAULT_RG"
+          
+          # Obtener el nombre del Key Vault dinámicamente (el único en el resource group)
+          KEY_VAULT_NAME=$(az keyvault list --resource-group "$KEY_VAULT_RG" --query "[0].name" -o tsv)
+          
+          if [ -z "$KEY_VAULT_NAME" ]; then
+            echo "ERROR: No se encontró ningún Key Vault en el Resource Group $KEY_VAULT_RG"
+            exit 1
+          fi
+          
+          echo "Key Vault encontrado: $KEY_VAULT_NAME"
+          echo "Obteniendo secrets del Key Vault..."
           
           # Obtener Resource Groups
           AZURE_RESOURCE_GROUP_DEV=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name "AZURE-RESOURCE-GROUP-DEV" --query "value" -o tsv)

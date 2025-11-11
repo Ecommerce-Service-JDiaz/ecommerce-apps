@@ -23,7 +23,8 @@ Este repositorio contiene los manifests de Kubernetes y el workflow de GitHub Ac
 
 2. **Secrets Configurados**
    - **GitHub Secrets**: Solo necesitas `AZURE_CREDENTIALS` (Service Principal)
-   - **Azure Key Vault**: Los demás secrets (Resource Groups y Cluster Names) se leen automáticamente del Key Vault `ecommercekv8486`
+   - **Azure Key Vault**: Los demás secrets (Resource Groups y Cluster Names) se leen automáticamente del Key Vault en el Resource Group `ecommerce-rg-global`
+   - El pipeline detecta dinámicamente el Key Vault (el único en ese Resource Group), por lo que funciona incluso si el nombre cambia después de un rollback
    - Consulta [SECRETS.md](SECRETS.md) para la configuración completa
 
 3. **Cluster preparado**
@@ -35,13 +36,14 @@ Este repositorio contiene los manifests de Kubernetes y el workflow de GitHub Ac
 - Parámetro `environment` con las opciones: `dev`, `stage`, `prod` o `all`.
 - Acciones que realiza:
   1. Inicia sesión en Azure usando `AZURE_CREDENTIALS` de GitHub Secrets
-  2. Lee los secrets del Azure Key Vault (`ecommercekv8486`): Resource Groups y Cluster Names
-  3. Obtiene las credenciales del cluster correspondiente según el ambiente
-  4. Crea/actualiza el namespace (`dev`, `stage`, `prod`)
-  5. Aplica los manifests de Zipkin (`deployment` y `service`)
-  6. Espera el rollout del deployment
-  7. Lista pods y endpoints del servicio
-  8. Muestra la URL interna para consumir Zipkin dentro del cluster
+  2. Detecta dinámicamente el Key Vault en el Resource Group `ecommerce-rg-global`
+  3. Lee los secrets del Azure Key Vault: Resource Groups y Cluster Names
+  4. Obtiene las credenciales del cluster correspondiente según el ambiente
+  5. Crea/actualiza el namespace (`dev`, `stage`, `prod`)
+  6. Aplica los manifests de Zipkin (`deployment` y `service`)
+  7. Espera el rollout del deployment
+  8. Lista pods y endpoints del servicio
+  9. Muestra la URL interna para consumir Zipkin dentro del cluster
 
 ### Cómo ejecutarlo
 
