@@ -25,6 +25,35 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Debug identidad actual
+        run: |
+          echo "🔍 Identidad actual de az:"
+          ACCOUNT_INFO=$(az account show -o json)
+          echo "$ACCOUNT_INFO" | jq .
+          
+          echo ""
+          echo "📋 Información del Service Principal:"
+          USER_TYPE=$(echo "$ACCOUNT_INFO" | jq -r '.user.type')
+          APP_ID=$(echo "$ACCOUNT_INFO" | jq -r '.user.name')
+          
+          echo "Tipo: $USER_TYPE"
+          echo "AppId (ClientId): $APP_ID"
+          
+          # Obtener el objectId del Service Principal usando el AppId
+          if [ "$USER_TYPE" = "servicePrincipal" ]; then
+            echo ""
+            echo "🔎 Obteniendo ObjectId del Service Principal..."
+            SP_INFO=$(az ad sp show --id "$APP_ID" -o json 2>/dev/null || echo "{}")
+            OBJECT_ID=$(echo "$SP_INFO" | jq -r '.id // "No encontrado"')
+            echo "ObjectId: $OBJECT_ID"
+            echo ""
+            echo "⚠️  Este ObjectId debe tener permisos en el Key Vault:"
+            echo "   - Access Policy con 'Get' y 'List' en secrets, O"
+            echo "   - Rol 'Key Vault Secrets User' por RBAC"
+          else
+            echo "⚠️  No es un Service Principal, verifica la configuración"
+          fi
+
       - name: Set up kubectl
         uses: azure/setup-kubectl@v3
         with:
