@@ -37,8 +37,15 @@ jobs:
 
       - name: Obtener secrets de Azure Key Vault
         id: get-kv-secrets
+        env:
+          RESOURCE_GROUP_KV: ${{ secrets.RESOURCE_GROUP_KV }}
         run: |
-          KEY_VAULT_RG="ecommerce-rg-global"
+          KEY_VAULT_RG="$RESOURCE_GROUP_KV"
+          
+          if [ -z "$KEY_VAULT_RG" ]; then
+            echo "ERROR: RESOURCE_GROUP_KV no está configurado en GitHub Secrets"
+            exit 1
+          fi
           
           echo "Buscando Key Vault en el Resource Group: $KEY_VAULT_RG"
           
