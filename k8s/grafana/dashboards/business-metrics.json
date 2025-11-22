@@ -1,0 +1,105 @@
+{
+  "dashboard": {
+    "title": "Ecommerce Business Metrics",
+    "tags": ["business", "metrics"],
+    "timezone": "browser",
+    "schemaVersion": 27,
+    "version": 1,
+    "refresh": "1m",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Total Sales",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(increase(ecommerce_sales_total[1h]))",
+            "legendFormat": "Sales (Last Hour)"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Orders Created",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(ecommerce_orders_created_total[5m])",
+            "legendFormat": "Created"
+          },
+          {
+            "expr": "rate(ecommerce_orders_completed_total[5m])",
+            "legendFormat": "Completed"
+          },
+          {
+            "expr": "rate(ecommerce_orders_cancelled_total[5m])",
+            "legendFormat": "Cancelled"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Active Users",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "ecommerce_users_active",
+            "legendFormat": "Active Users"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "Products Sold",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(ecommerce_products_sold_total[5m])",
+            "legendFormat": "Products Sold/min"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 5,
+        "title": "Payment Success Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(ecommerce_payments_success_total[5m]) / (rate(ecommerce_payments_success_total[5m]) + rate(ecommerce_payments_failed_total[5m])) * 100",
+            "legendFormat": "Success Rate %"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 6,
+        "title": "Cart Conversion Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(ecommerce_cart_converted_total[5m]) / rate(ecommerce_cart_created_total[5m]) * 100",
+            "legendFormat": "Conversion %"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 16}
+      },
+      {
+        "id": 7,
+        "title": "Cart Abandonment Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(ecommerce_cart_abandoned_total[5m]) / rate(ecommerce_cart_created_total[5m]) * 100",
+            "legendFormat": "Abandonment %"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 16}
+      }
+    ]
+  }
+}
+

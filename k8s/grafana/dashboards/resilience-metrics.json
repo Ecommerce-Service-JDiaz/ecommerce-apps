@@ -1,0 +1,69 @@
+{
+  "dashboard": {
+    "title": "Ecommerce Resilience Metrics",
+    "tags": ["resilience", "circuit-breaker"],
+    "timezone": "browser",
+    "schemaVersion": 27,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Circuit Breaker State",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "resilience4j_circuitbreaker_state",
+            "legendFormat": "{{name}} - {{state}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Circuit Breaker Failure Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "resilience4j_circuitbreaker_failure_rate",
+            "legendFormat": "{{name}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Retry Attempts",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(resilience4j_retry_calls_total{kind=\"successful_without_retry\"}[5m])",
+            "legendFormat": "{{name}} - No Retry"
+          },
+          {
+            "expr": "rate(resilience4j_retry_calls_total{kind=\"successful_with_retry\"}[5m])",
+            "legendFormat": "{{name}} - With Retry"
+          },
+          {
+            "expr": "rate(resilience4j_retry_calls_total{kind=\"failed_without_retry\"}[5m])",
+            "legendFormat": "{{name}} - Failed"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "Bulkhead Available Calls",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "resilience4j_bulkhead_available_concurrent_calls",
+            "legendFormat": "{{name}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      }
+    ]
+  }
+}
+

@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-alert-rules
+  namespace: ${NAMESPACE}
+  labels:
+    app: prometheus
+    component: monitoring
+data:
+  alert_rules.yml: |
+    groups:
+      - name: infrastructure
+        interval: 30s
+        rules:
+          - alert: PodCrashLooping
+            expr: rate(kube_pod_container_status_restarts_total[5m]) > 0
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Pod {{ $labels.pod }} está en CrashLoopBackOff"
+              description: "El pod {{ $labels.pod }} en namespace {{ $labels.namespace }} ha reiniciado {{ $value }} veces en los últimos 5 minutos"
+
+          - alert: HighCPUUsage
+            expr: 100 - (avg by(instance) (rate(process_cpu_seconds_total[5m])) * 100) < 20
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Alto uso de CPU en {{ $labels.instance }}"
+              description: "El servicio {{ $labels.service }} está usando más del 80% de CPU"
+
+          - alert: HighMemoryUsage
+            expr: (container_memory_working_set_bytes / container_spec_memory_limit_bytes) * 100 > 90
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Alto uso de memoria en {{ $labels.pod }}"
+              description: "El pod {{ $labels.pod }} está usando más del 90% de su límite de memoria"
+
+      - name: application
+        interval: 30s
+        rules:
+          - alert: HighErrorRate
+            expr: (sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) by (service) / sum(rate(http_server_requests_seconds_count[5m])) by (service)) * 100 > 5
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Alta tasa de errores en {{ $labels.service }}"
+              description: "El servicio {{ $labels.service }} tiene una tasa de error del {{ $value }}%"
+
+          - alert: HighLatency
+            expr: histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket[5m])) by (le, service)) > 2
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Alta latencia en {{ $labels.service }}"
+              description: "El p95 de latencia en {{ $labels.service }} es {{ $value }} segundos"
+
+          - alert: CircuitBreakerOpen
+            expr: resilience4j_circuitbreaker_state{state="OPEN"} == 1
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Circuit Breaker abierto en {{ $labels.name }}"
+              description: "El circuit breaker {{ $labels.name }} está abierto en el servicio {{ $labels.service }}"
+
+          - alert: HealthCheckFailing
+            expr: up{job=~".*-service"} == 0
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Health check fallando en {{ $labels.job }}"
+              description: "El servicio {{ $labels.job }} no está respondiendo a health checks"
+
+      - name: business
+        interval: 1m
+        rules:
+          - alert: HighCartAbandonmentRate
+            expr: (rate(ecommerce_cart_abandoned_total[5m]) / rate(ecommerce_cart_created_total[5m])) * 100 > 50
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Alta tasa de abandono de carritos"
+              description: "La tasa de abandono de carritos es del {{ $value }}%"
+
+          - alert: HighPaymentFailureRate
+            expr: (rate(ecommerce_payments_failed_total[5m]) / (rate(ecommerce_payments_success_total[5m]) + rate(ecommerce_payments_failed_total[5m]))) * 100 > 10
+            for: 10m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Alta tasa de fallo de pagos"
+              description: "La tasa de fallo de pagos es del {{ $value }}%"
+
+          - alert: SalesDrop
+            expr: (rate(ecommerce_sales_total[1h]) / rate(ecommerce_sales_total[1h] offset 24h)) < 0.8
+            for: 30m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Caída en ventas detectada"
+              description: "Las ventas han caído un {{ $value }}% comparado con el mismo período ayer"
+

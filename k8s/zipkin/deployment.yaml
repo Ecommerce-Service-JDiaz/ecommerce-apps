@@ -24,13 +24,15 @@ spec:
         env:
         - name: STORAGE_TYPE
           value: "mem"
+        - name: JAVA_OPTS
+          value: "-Xms64m -Xmx128m -XX:+UseSerialGC"
         resources:
           requests:
-            memory: "512Mi"
-            cpu: "250m"
+            memory: "64Mi"
+            cpu: "50m"
           limits:
-            memory: "1Gi"
-            cpu: "500m"
+            memory: "128Mi"
+            cpu: "100m"
         livenessProbe:
           httpGet:
             path: /health

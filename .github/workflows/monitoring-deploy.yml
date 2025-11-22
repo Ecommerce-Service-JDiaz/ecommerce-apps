@@ -1,0 +1,260 @@
+name: Deploy Monitoring Stack to Kubernetes
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Ambiente de despliegue'
+        required: true
+        type: choice
+        options:
+          - dev
+          - stage
+          - prod
+          - all
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Install envsubst
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gettext-base
+
+      - name: Obtener secrets de Azure Key Vault
+        id: get-kv-secrets
+        env:
+          RESOURCE_GROUP_KV: ${{ secrets.RESOURCE_GROUP_KV }}
+        run: |
+          KEY_VAULT_RG="$RESOURCE_GROUP_KV"
+          
+          if [ -z "$KEY_VAULT_RG" ]; then
+            echo "ERROR: RESOURCE_GROUP_KV no está configurado en GitHub Secrets"
+            exit 1
+          fi
+          
+          echo "Buscando Key Vault en el Resource Group: $KEY_VAULT_RG"
+          
+          KEY_VAULT_NAME=$(az keyvault list --resource-group "$KEY_VAULT_RG" --query "[0].name" -o tsv)
+          
+          if [ -z "$KEY_VAULT_NAME" ]; then
+            echo "ERROR: No se encontró ningún Key Vault en el Resource Group $KEY_VAULT_RG"
+            exit 1
+          fi
+          
+          echo "Key Vault encontrado: $KEY_VAULT_NAME"
+          
+          # Obtener Resource Groups
+          AZURE_RESOURCE_GROUP_DEV=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name "AZURE-RESOURCE-GROUP-DEV" --query "value" -o tsv)
+          AZURE_RESOURCE_GROUP_STAGE=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name "AZURE-RESOURCE-GROUP-STAGE" --query "value" -o tsv)
+          AZURE_RESOURCE_GROUP_PROD=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name "AZURE-RESOURCE-GROUP-PROD" --query "value" -o tsv)
+          
+          # Obtener Cluster Names
+          AKS_CLUSTER_NAME_DEV=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name "AKS-CLUSTER-NAME-DEV" --query "value" -o tsv)
+          AKS_CLUSTER_NAME_STAGE=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name "AKS-CLUSTER-NAME-STAGE" --query "value" -o tsv)
+          AKS_CLUSTER_NAME_PROD=$(az keyvault secret show --vault-name "$KEY_VAULT_NAME" --name "AKS-CLUSTER-NAME-PROD" --query "value" -o tsv)
+          
+          # Validar que se obtuvieron todos los secrets
+          if [ -z "$AZURE_RESOURCE_GROUP_DEV" ] || [ -z "$AZURE_RESOURCE_GROUP_STAGE" ] || [ -z "$AZURE_RESOURCE_GROUP_PROD" ]; then
+            echo "ERROR: No se pudieron obtener los Resource Groups del Key Vault"
+            exit 1
+          fi
+          
+          if [ -z "$AKS_CLUSTER_NAME_DEV" ] || [ -z "$AKS_CLUSTER_NAME_STAGE" ] || [ -z "$AKS_CLUSTER_NAME_PROD" ]; then
+            echo "ERROR: No se pudieron obtener los Cluster Names del Key Vault"
+            exit 1
+          fi
+          
+          # Enmascarar los valores
+          echo "::add-mask::$AZURE_RESOURCE_GROUP_DEV"
+          echo "::add-mask::$AZURE_RESOURCE_GROUP_STAGE"
+          echo "::add-mask::$AZURE_RESOURCE_GROUP_PROD"
+          echo "::add-mask::$AKS_CLUSTER_NAME_DEV"
+          echo "::add-mask::$AKS_CLUSTER_NAME_STAGE"
+          echo "::add-mask::$AKS_CLUSTER_NAME_PROD"
+          
+          # Exportar como variables de salida
+          echo "AZURE_RESOURCE_GROUP_DEV<<EOF" >> $GITHUB_OUTPUT
+          echo "$AZURE_RESOURCE_GROUP_DEV" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "AZURE_RESOURCE_GROUP_STAGE<<EOF" >> $GITHUB_OUTPUT
+          echo "$AZURE_RESOURCE_GROUP_STAGE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "AZURE_RESOURCE_GROUP_PROD<<EOF" >> $GITHUB_OUTPUT
+          echo "$AZURE_RESOURCE_GROUP_PROD" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "AKS_CLUSTER_NAME_DEV<<EOF" >> $GITHUB_OUTPUT
+          echo "$AKS_CLUSTER_NAME_DEV" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "AKS_CLUSTER_NAME_STAGE<<EOF" >> $GITHUB_OUTPUT
+          echo "$AKS_CLUSTER_NAME_STAGE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "AKS_CLUSTER_NAME_PROD<<EOF" >> $GITHUB_OUTPUT
+          echo "$AKS_CLUSTER_NAME_PROD" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "✅ Secrets obtenidos exitosamente del Key Vault"
+
+      - name: Deploy Monitoring Stack
+        env:
+          AZURE_RESOURCE_GROUP_DEV: ${{ steps.get-kv-secrets.outputs.AZURE_RESOURCE_GROUP_DEV }}
+          AKS_CLUSTER_NAME_DEV: ${{ steps.get-kv-secrets.outputs.AKS_CLUSTER_NAME_DEV }}
+          AZURE_RESOURCE_GROUP_STAGE: ${{ steps.get-kv-secrets.outputs.AZURE_RESOURCE_GROUP_STAGE }}
+          AKS_CLUSTER_NAME_STAGE: ${{ steps.get-kv-secrets.outputs.AKS_CLUSTER_NAME_STAGE }}
+          AZURE_RESOURCE_GROUP_PROD: ${{ steps.get-kv-secrets.outputs.AZURE_RESOURCE_GROUP_PROD }}
+          AKS_CLUSTER_NAME_PROD: ${{ steps.get-kv-secrets.outputs.AKS_CLUSTER_NAME_PROD }}
+        run: |
+          ENVIRONMENTS="${{ github.event.inputs.environment }}"
+          
+          if [ "$ENVIRONMENTS" = "all" ]; then
+            ENVIRONMENTS="dev stage prod"
+          fi
+          
+          for env in $ENVIRONMENTS; do
+            echo "Desplegando stack de monitoreo en ambiente: $env"
+            
+            # Obtener variables según el ambiente
+            RESOURCE_GROUP_VAR="AZURE_RESOURCE_GROUP_${env^^}"
+            CLUSTER_NAME_VAR="AKS_CLUSTER_NAME_${env^^}"
+            RESOURCE_GROUP="${!RESOURCE_GROUP_VAR}"
+            CLUSTER_NAME="${!CLUSTER_NAME_VAR}"
+            
+            if [ -z "$RESOURCE_GROUP" ] || [ -z "$CLUSTER_NAME" ]; then
+              echo "ERROR: Variables no configuradas para el ambiente $env"
+              exit 1
+            fi
+            
+            echo "::add-mask::$RESOURCE_GROUP"
+            echo "::add-mask::$CLUSTER_NAME"
+            
+            echo "Conectando al cluster..."
+            az aks get-credentials \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "$CLUSTER_NAME" \
+              --overwrite-existing
+            
+            # Crear namespace si no existe
+            echo "Verificando/creando namespace $env..."
+            kubectl create namespace $env --dry-run=client -o yaml | kubectl apply -f -
+            
+            # Exportar variables para envsubst
+            export NAMESPACE=$env
+            export ENVIRONMENT=$env
+            
+            # Desplegar Prometheus
+            echo "Desplegando Prometheus..."
+            envsubst < k8s/prometheus/configmap.yaml | kubectl apply -f -
+            envsubst < k8s/prometheus/alert-rules.yaml | kubectl apply -f -
+            envsubst < k8s/prometheus/deployment.yaml | kubectl apply -f -
+            envsubst < k8s/prometheus/service.yaml | kubectl apply -f -
+            
+            # Desplegar Grafana
+            echo "Desplegando Grafana..."
+            envsubst < k8s/grafana/configmap-datasources.yaml | kubectl apply -f -
+            envsubst < k8s/grafana/configmap-dashboards.yaml | kubectl apply -f -
+            envsubst < k8s/grafana/configmap-dashboard-definitions.yaml | kubectl apply -f -
+            envsubst < k8s/grafana/deployment.yaml | kubectl apply -f -
+            envsubst < k8s/grafana/service.yaml | kubectl apply -f -
+            
+            # Desplegar Elasticsearch
+            echo "Desplegando Elasticsearch..."
+            envsubst < k8s/elasticsearch/deployment.yaml | kubectl apply -f -
+            envsubst < k8s/elasticsearch/service.yaml | kubectl apply -f -
+            
+            # Desplegar Logstash
+            echo "Desplegando Logstash..."
+            envsubst < k8s/logstash/configmap.yaml | kubectl apply -f -
+            envsubst < k8s/logstash/deployment.yaml | kubectl apply -f -
+            envsubst < k8s/logstash/service.yaml | kubectl apply -f -
+            
+            # Desplegar Kibana
+            echo "Desplegando Kibana..."
+            envsubst < k8s/kibana/deployment.yaml | kubectl apply -f -
+            
+            # Desplegar AlertManager
+            echo "Desplegando AlertManager..."
+            envsubst < k8s/alertmanager/configmap.yaml | kubectl apply -f -
+            envsubst < k8s/alertmanager/deployment.yaml | kubectl apply -f -
+            envsubst < k8s/alertmanager/service.yaml | kubectl apply -f -
+            
+            echo "Stack de monitoreo desplegado exitosamente en $env"
+          done
+
+      - name: Verify deployment
+        env:
+          AZURE_RESOURCE_GROUP_DEV: ${{ steps.get-kv-secrets.outputs.AZURE_RESOURCE_GROUP_DEV }}
+          AKS_CLUSTER_NAME_DEV: ${{ steps.get-kv-secrets.outputs.AKS_CLUSTER_NAME_DEV }}
+          AZURE_RESOURCE_GROUP_STAGE: ${{ steps.get-kv-secrets.outputs.AZURE_RESOURCE_GROUP_STAGE }}
+          AKS_CLUSTER_NAME_STAGE: ${{ steps.get-kv-secrets.outputs.AKS_CLUSTER_NAME_STAGE }}
+          AZURE_RESOURCE_GROUP_PROD: ${{ steps.get-kv-secrets.outputs.AZURE_RESOURCE_GROUP_PROD }}
+          AKS_CLUSTER_NAME_PROD: ${{ steps.get-kv-secrets.outputs.AKS_CLUSTER_NAME_PROD }}
+        run: |
+          ENVIRONMENTS="${{ github.event.inputs.environment }}"
+          
+          if [ "$ENVIRONMENTS" = "all" ]; then
+            ENVIRONMENTS="dev stage prod"
+          fi
+          
+          for env in $ENVIRONMENTS; do
+            echo "Verificando despliegue en ambiente: $env"
+            
+            RESOURCE_GROUP_VAR="AZURE_RESOURCE_GROUP_${env^^}"
+            CLUSTER_NAME_VAR="AKS_CLUSTER_NAME_${env^^}"
+            RESOURCE_GROUP="${!RESOURCE_GROUP_VAR}"
+            CLUSTER_NAME="${!CLUSTER_NAME_VAR}"
+            
+            echo "::add-mask::$RESOURCE_GROUP"
+            echo "::add-mask::$CLUSTER_NAME"
+            
+            az aks get-credentials \
+              --resource-group "$RESOURCE_GROUP" \
+              --name "$CLUSTER_NAME" \
+              --overwrite-existing
+            
+            echo "=== Estado de los Deployments ==="
+            kubectl get deployments -n $env -l component=monitoring
+            kubectl get deployments -n $env -l component=logging
+            
+            echo "=== Estado de los Services ==="
+            kubectl get services -n $env -l component=monitoring
+            kubectl get services -n $env -l component=logging
+            
+            echo "=== Esperando rollouts ==="
+            kubectl rollout status deployment/prometheus -n $env --timeout=300s || true
+            kubectl rollout status deployment/grafana -n $env --timeout=300s || true
+            kubectl rollout status deployment/elasticsearch -n $env --timeout=300s || true
+            kubectl rollout status deployment/logstash -n $env --timeout=300s || true
+            kubectl rollout status deployment/kibana -n $env --timeout=300s || true
+            kubectl rollout status deployment/alertmanager -n $env --timeout=300s || true
+            
+            echo "=== Pods en ejecución ==="
+            kubectl get pods -n $env -l component=monitoring
+            kubectl get pods -n $env -l component=logging
+            
+            echo "ℹ️  Servicios accesibles dentro del cluster:"
+            echo "   - Prometheus: http://prometheus.$env:9090"
+            echo "   - Grafana: http://grafana.$env:3000"
+            echo "   - Elasticsearch: http://elasticsearch.$env:9200"
+            echo "   - Kibana: http://kibana.$env:5601"
+            echo "   - AlertManager: http://alertmanager.$env:9093"
+          done
+

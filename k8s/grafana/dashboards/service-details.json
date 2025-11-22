@@ -1,0 +1,74 @@
+{
+  "dashboard": {
+    "title": "Service Details - $service",
+    "tags": ["service", "details"],
+    "timezone": "browser",
+    "schemaVersion": 27,
+    "version": 1,
+    "refresh": "30s",
+    "templating": {
+      "list": [
+        {
+          "name": "service",
+          "type": "query",
+          "query": "label_values(http_server_requests_seconds_count, service)",
+          "current": {
+            "text": "user-service",
+            "value": "user-service"
+          }
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Request Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_server_requests_seconds_count{service=\"$service\"}[5m])",
+            "legendFormat": "{{method}} {{uri}} - {{status}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Response Time (p95)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{service=\"$service\"}[5m])) by (le))",
+            "legendFormat": "p95"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Error Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(http_server_requests_seconds_count{service=\"$service\",status=~\"5..\"}[5m])) / sum(rate(http_server_requests_seconds_count{service=\"$service\"}[5m])) * 100",
+            "legendFormat": "Error %"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "JVM Memory",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "jvm_memory_used_bytes{service=\"$service\"}",
+            "legendFormat": "{{area}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      }
+    ]
+  }
+}
+

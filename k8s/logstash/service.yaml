@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: logstash
+  namespace: ${NAMESPACE}
+  labels:
+    app: logstash
+    component: logging
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5044
+    targetPort: 5044
+    protocol: TCP
+    name: beats
+  - port: 9600
+    targetPort: 9600
+    protocol: TCP
+    name: monitoring
+  selector:
+    app: logstash
+

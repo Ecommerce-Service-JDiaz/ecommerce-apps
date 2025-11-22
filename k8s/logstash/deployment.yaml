@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logstash
+  namespace: ${NAMESPACE}
+  labels:
+    app: logstash
+    component: logging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: logstash
+  template:
+    metadata:
+      labels:
+        app: logstash
+        component: logging
+    spec:
+      containers:
+      - name: logstash
+        image: docker.elastic.co/logstash/logstash:8.11.0
+        ports:
+        - containerPort: 5044
+          name: beats
+          protocol: TCP
+        - containerPort: 9600
+          name: monitoring
+          protocol: TCP
+        env:
+        - name: LS_JAVA_OPTS
+          value: "-Xmx128m -Xms128m -XX:+UseSerialGC"
+        - name: PIPELINE_WORKERS
+          value: "1"
+        - name: PIPELINE_BATCH_SIZE
+          value: "50"
+        volumeMounts:
+        - name: logstash-config
+          mountPath: /usr/share/logstash/pipeline
+        - name: logstash-settings
+          mountPath: /usr/share/logstash/config
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "192Mi"
+            cpu: "100m"
+        livenessProbe:
+          httpGet:
+            path: /_node/stats
+            port: 9600
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /_node/stats
+            port: 9600
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+      volumes:
+      - name: logstash-config
+        configMap:
+          name: logstash-config
+      - name: logstash-settings
+        configMap:
+          name: logstash-settings
+

@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-config
+  namespace: ${NAMESPACE}
+  labels:
+    app: logstash
+    component: logging
+data:
+  logstash.conf: |
+    input {
+      http {
+        port => 5044
+        codec => json
+      }
+    }
+
+    filter {
+      if [service] {
+        mutate {
+          add_field => { "[@metadata][index]" => "%{service}-%{environment}" }
+        }
+      } else {
+        mutate {
+          add_field => { "[@metadata][index]" => "logs-%{environment}" }
+        }
+      }
+
+      date {
+        match => [ "timestamp", "ISO8601", "yyyy-MM-dd HH:mm:ss.SSS" ]
+      }
+
+      mutate {
+        remove_field => [ "host" ]
+      }
+    }
+
+    output {
+      elasticsearch {
+        hosts => ["elasticsearch:9200"]
+        index => "%{[@metadata][index]}-%{+YYYY.MM.dd}"
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-settings
+  namespace: ${NAMESPACE}
+  labels:
+    app: logstash
+    component: logging
+data:
+  logstash.yml: |
+    http.host: "0.0.0.0"
+    xpack.monitoring.enabled: false
+

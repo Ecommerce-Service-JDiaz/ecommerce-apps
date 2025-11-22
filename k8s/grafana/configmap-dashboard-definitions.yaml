@@ -1,0 +1,331 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-definitions
+  namespace: ${NAMESPACE}
+  labels:
+    app: grafana
+    component: monitoring
+data:
+  system-overview.json: |
+    {
+      "dashboard": {
+        "title": "Ecommerce System Overview",
+        "tags": ["system", "overview"],
+        "timezone": "browser",
+        "schemaVersion": 27,
+        "version": 1,
+        "refresh": "30s",
+        "panels": [
+          {
+            "id": 1,
+            "title": "CPU Usage by Service",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(process_cpu_seconds_total[5m]) * 100",
+                "legendFormat": "{{service}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+          },
+          {
+            "id": 2,
+            "title": "Memory Usage by Service",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "jvm_memory_used_bytes / jvm_memory_max_bytes * 100",
+                "legendFormat": "{{service}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+          },
+          {
+            "id": 3,
+            "title": "HTTP Request Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(http_server_requests_seconds_count[5m])",
+                "legendFormat": "{{service}} - {{status}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+          },
+          {
+            "id": 4,
+            "title": "Active Pods",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "count(up{job=~'.*-service'} == 1)",
+                "legendFormat": "Active Services"
+              }
+            ],
+            "gridPos": {"h": 4, "w": 6, "x": 12, "y": 8}
+          },
+          {
+            "id": 5,
+            "title": "Error Rate",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "sum(rate(http_server_requests_seconds_count{status=~'5..'}[5m])) / sum(rate(http_server_requests_seconds_count[5m])) * 100",
+                "legendFormat": "Error %"
+              }
+            ],
+            "gridPos": {"h": 4, "w": 6, "x": 18, "y": 8}
+          }
+        ]
+      }
+    }
+  business-metrics.json: |
+    {
+      "dashboard": {
+        "title": "Ecommerce Business Metrics",
+        "tags": ["business", "metrics"],
+        "timezone": "browser",
+        "schemaVersion": 27,
+        "version": 1,
+        "refresh": "1m",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Total Sales",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "sum(increase(ecommerce_sales_total[1h]))",
+                "legendFormat": "Sales (Last Hour)"
+              }
+            ],
+            "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0}
+          },
+          {
+            "id": 2,
+            "title": "Orders Created",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(ecommerce_orders_created_total[5m])",
+                "legendFormat": "Created"
+              },
+              {
+                "expr": "rate(ecommerce_orders_completed_total[5m])",
+                "legendFormat": "Completed"
+              },
+              {
+                "expr": "rate(ecommerce_orders_cancelled_total[5m])",
+                "legendFormat": "Cancelled"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 6, "y": 0}
+          },
+          {
+            "id": 3,
+            "title": "Active Users",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "ecommerce_users_active",
+                "legendFormat": "Active Users"
+              }
+            ],
+            "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0}
+          },
+          {
+            "id": 4,
+            "title": "Products Sold",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(ecommerce_products_sold_total[5m])",
+                "legendFormat": "Products Sold/min"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+          },
+          {
+            "id": 5,
+            "title": "Payment Success Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(ecommerce_payments_success_total[5m]) / (rate(ecommerce_payments_success_total[5m]) + rate(ecommerce_payments_failed_total[5m])) * 100",
+                "legendFormat": "Success Rate %"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+          },
+          {
+            "id": 6,
+            "title": "Cart Conversion Rate",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rate(ecommerce_cart_converted_total[5m]) / rate(ecommerce_cart_created_total[5m]) * 100",
+                "legendFormat": "Conversion %"
+              }
+            ],
+            "gridPos": {"h": 4, "w": 6, "x": 0, "y": 16}
+          },
+          {
+            "id": 7,
+            "title": "Cart Abandonment Rate",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "rate(ecommerce_cart_abandoned_total[5m]) / rate(ecommerce_cart_created_total[5m]) * 100",
+                "legendFormat": "Abandonment %"
+              }
+            ],
+            "gridPos": {"h": 4, "w": 6, "x": 6, "y": 16}
+          }
+        ]
+      }
+    }
+  resilience-metrics.json: |
+    {
+      "dashboard": {
+        "title": "Ecommerce Resilience Metrics",
+        "tags": ["resilience", "circuit-breaker"],
+        "timezone": "browser",
+        "schemaVersion": 27,
+        "version": 1,
+        "refresh": "30s",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Circuit Breaker State",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "resilience4j_circuitbreaker_state",
+                "legendFormat": "{{name}} - {{state}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+          },
+          {
+            "id": 2,
+            "title": "Circuit Breaker Failure Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "resilience4j_circuitbreaker_failure_rate",
+                "legendFormat": "{{name}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+          },
+          {
+            "id": 3,
+            "title": "Retry Attempts",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(resilience4j_retry_calls_total{kind=\"successful_without_retry\"}[5m])",
+                "legendFormat": "{{name}} - No Retry"
+              },
+              {
+                "expr": "rate(resilience4j_retry_calls_total{kind=\"successful_with_retry\"}[5m])",
+                "legendFormat": "{{name}} - With Retry"
+              },
+              {
+                "expr": "rate(resilience4j_retry_calls_total{kind=\"failed_without_retry\"}[5m])",
+                "legendFormat": "{{name}} - Failed"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+          },
+          {
+            "id": 4,
+            "title": "Bulkhead Available Calls",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "resilience4j_bulkhead_available_concurrent_calls",
+                "legendFormat": "{{name}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+          }
+        ]
+      }
+    }
+  service-details.json: |
+    {
+      "dashboard": {
+        "title": "Service Details - $service",
+        "tags": ["service", "details"],
+        "timezone": "browser",
+        "schemaVersion": 27,
+        "version": 1,
+        "refresh": "30s",
+        "templating": {
+          "list": [
+            {
+              "name": "service",
+              "type": "query",
+              "query": "label_values(http_server_requests_seconds_count, service)",
+              "current": {
+                "text": "user-service",
+                "value": "user-service"
+              }
+            }
+          ]
+        },
+        "panels": [
+          {
+            "id": 1,
+            "title": "Request Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(http_server_requests_seconds_count{service=\"$service\"}[5m])",
+                "legendFormat": "{{method}} {{uri}} - {{status}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+          },
+          {
+            "id": 2,
+            "title": "Response Time (p95)",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{service=\"$service\"}[5m])) by (le))",
+                "legendFormat": "p95"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+          },
+          {
+            "id": 3,
+            "title": "Error Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(rate(http_server_requests_seconds_count{service=\"$service\",status=~\"5..\"}[5m])) / sum(rate(http_server_requests_seconds_count{service=\"$service\"}[5m])) * 100",
+                "legendFormat": "Error %"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+          },
+          {
+            "id": 4,
+            "title": "JVM Memory",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "jvm_memory_used_bytes{service=\"$service\"}",
+                "legendFormat": "{{area}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+          }
+        ]
+      }
+    }
+
