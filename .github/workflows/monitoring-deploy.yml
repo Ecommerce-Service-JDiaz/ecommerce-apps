@@ -1,6 +1,9 @@
 name: Deploy Monitoring Stack to Kubernetes
 
 on:
+  push:
+    branches:
+      - development
   workflow_dispatch:
     inputs:
       environment:
@@ -12,6 +15,10 @@ on:
           - stage
           - prod
           - all
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   deploy:
