@@ -1,6 +1,9 @@
 name: Deploy Zipkin to Kubernetes
 
 on:
+  push:
+    branches:
+      - development
   workflow_dispatch:
     inputs:
       environment:
