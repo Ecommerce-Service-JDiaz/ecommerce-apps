@@ -1,9 +1,6 @@
 name: Deploy Monitoring Stack to Kubernetes
 
 on:
-  push:
-    branches:
-      - development
   workflow_dispatch:
     inputs:
       environment:
